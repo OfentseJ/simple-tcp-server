@@ -145,7 +145,7 @@ function bufPush(buf: DynBuf, data: Buffer) {
   if (buf.data.length < newLen) {
     //grow capacity
     let cap = Math.max(buf.data.length, 32);
-    if (cap < length) {
+    if (cap < newLen) {
       cap *= 2;
     }
     const grown = Buffer.alloc(cap);
