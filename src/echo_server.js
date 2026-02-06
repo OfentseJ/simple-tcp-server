@@ -1,4 +1,5 @@
 import * as net from "net";
+import { buffer } from "stream/consumers";
 function soInit(socket) {
     const conn = {
         socket: socket,
@@ -106,17 +107,59 @@ async function newConn(socket) {
         socket.destroy();
     }
 }
+function bufPush(buf, data) {
+    const newLen = buf.data.length + data.length;
+    if (buf.data.length < newLen) {
+        //grow capacity
+        let cap = Math.max(buf.data.length, 32);
+        if (cap < length) {
+            cap *= 2;
+        }
+        const grown = Buffer.alloc(cap);
+        buf.data.copy(grown, 0, 0);
+        buf.data = grown;
+    }
+    data.copy(buf.data, buf.length, 0);
+    buf.length = newLen;
+}
+function bufPop(buf, len) {
+    buf.data.copyWithin(0, len, buf.length);
+    buf.length -= len;
+}
+function cutMessage(buf) {
+    const idx = buf.data.subarray(0, buf.length).indexOf("\n");
+    if (idx < 0) {
+        return null;
+    }
+    const msg = Buffer.from(buf.data.subarray(0, idx + 1));
+    bufPop(buf, idx + 1);
+    return msg;
+}
 // echo server
 async function serveClient(socket) {
     const conn = soInit(socket);
+    const buf = { data: Buffer.alloc(0), length: 0 };
     while (true) {
-        const data = await soRead(conn);
-        if (data.length === 0) {
-            console.log("end connection");
-            break;
+        const msg = cutMessage(buf);
+        if (!msg) {
+            const data = await soRead(conn);
+            bufPush(buf, data);
+            // EOF?
+            if (data.length === 0) {
+                console.log("End of Connection");
+                return;
+            }
+            continue;
         }
-        console.log("data", data);
-        await soWrite(conn, data);
+        if (msg.equals(Buffer.from("quit\n"))) {
+            await soWrite(conn, Buffer.from("Bye.\n"));
+            socket.destroy();
+            return;
+        }
+        else {
+            const reply = Buffer.concat([Buffer.from("Echo: "), msg]);
+            await soWrite(conn, reply);
+        }
     }
 }
 // Main server loop
