@@ -129,6 +129,17 @@ function soAccept(listener: TCPListener): Promise<net.Socket> {
   });
 }
 
+async function newConn(socket: net.Socket): Promise<void> {
+  console.log("new connection", socket.remoteAddress, socket.remotePort);
+  try {
+    await serveClient(socket);
+  } catch (exc) {
+    console.error("exception:", exc);
+  } finally {
+    socket.destroy();
+  }
+}
+
 function bufPush(buf: DynBuf, data: Buffer) {
   const newLen = buf.data.length + data.length;
   if (buf.data.length < newLen) {
@@ -145,15 +156,18 @@ function bufPush(buf: DynBuf, data: Buffer) {
   buf.length = newLen;
 }
 
-async function newConn(socket: net.Socket): Promise<void> {
-  console.log("new connection", socket.remoteAddress, socket.remotePort);
-  try {
-    await serveClient(socket);
-  } catch (exc) {
-    console.error("exception:", exc);
-  } finally {
-    socket.destroy();
+function bufPop(buf: DynBuf, len: number): void {
+  buf.data.copyWithin(0, len, buf.length);
+  buf.length -= len;
+}
+
+function cutMessage(buf: DynBuf): null | Buffer {
+  const idx = buf.data.subarray(0, buf.length).indexOf("\n");
+  if (idx < 0) {
+    return null;
   }
+  const msg = Buffer.from(buf.data.subarray(0, idx + 1));
+  return msg;
 }
 
 // echo server
@@ -163,6 +177,22 @@ async function serveClient(socket: net.Socket): Promise<void> {
   while (true) {
     const msg: null | Buffer = cutMessage(buf);
     if (!msg) {
+      const data: Buffer = await soRead(conn);
+      bufPush(buf, data);
+      // EOF?
+      if (data.length === 0) {
+        console.log("End of Connection");
+        return;
+      }
+      continue;
+    }
+    if (msg.equals(Buffer.from("quit\n"))) {
+      await soWrite(conn, Buffer.from("Bye.\n"));
+      socket.destroy();
+      return;
+    } else {
+      const reply = Buffer.concat([Buffer.from("Echo: "), msg]);
+      await soWrite(conn, reply);
     }
   }
 }
