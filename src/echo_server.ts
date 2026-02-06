@@ -1,4 +1,5 @@
 import * as net from "net";
+import { buffer } from "stream/consumers";
 
 type TCPConn = {
   socket: net.Socket;
@@ -17,6 +18,11 @@ type TCPListener = {
     resolve: (value: net.Socket) => void;
     reject: (value: Error) => void;
   };
+};
+
+type DynBuf = {
+  data: Buffer;
+  length: number;
 };
 
 function soInit(socket: net.Socket): TCPConn {
@@ -123,6 +129,22 @@ function soAccept(listener: TCPListener): Promise<net.Socket> {
   });
 }
 
+function bufPush(buf: DynBuf, data: Buffer) {
+  const newLen = buf.data.length + data.length;
+  if (buf.data.length < newLen) {
+    //grow capacity
+    let cap = Math.max(buf.data.length, 32);
+    if (cap < length) {
+      cap *= 2;
+    }
+    const grown = Buffer.alloc(cap);
+    buf.data.copy(grown, 0, 0);
+    buf.data = grown;
+  }
+  data.copy(buf.data, buf.length, 0);
+  buf.length = newLen;
+}
+
 async function newConn(socket: net.Socket): Promise<void> {
   console.log("new connection", socket.remoteAddress, socket.remotePort);
   try {
@@ -137,14 +159,11 @@ async function newConn(socket: net.Socket): Promise<void> {
 // echo server
 async function serveClient(socket: net.Socket): Promise<void> {
   const conn: TCPConn = soInit(socket);
+  const buf: DynBuf = { data: Buffer.alloc(0), length: 0 };
   while (true) {
-    const data = await soRead(conn);
-    if (data.length === 0) {
-      console.log("end connection");
-      break;
+    const msg: null | Buffer = cutMessage(buf);
+    if (!msg) {
     }
-    console.log("data", data);
-    await soWrite(conn, data);
   }
 }
 
