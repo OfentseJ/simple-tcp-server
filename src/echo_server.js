@@ -8,7 +8,7 @@ function soInit(socket) {
         reader: null,
     };
     socket.on("data", (data) => {
-        console.assert(!conn.reader);
+        console.assert(conn.reader !== null);
         conn.socket.pause();
         conn.reader.resolve(data);
         conn.reader = null;
@@ -71,7 +71,7 @@ function soListen(port, host) {
         conn: null,
     };
     server.on("connection", (socket) => {
-        console.assert(!listener.conn);
+        console.assert(listener.conn !== null);
         listener.conn.resolve(socket);
         listener.conn = null;
     });
@@ -108,7 +108,7 @@ async function newConn(socket) {
     }
 }
 function bufPush(buf, data) {
-    const newLen = buf.data.length + data.length;
+    const newLen = buf.length + data.length;
     if (buf.data.length < newLen) {
         //grow capacity
         let cap = Math.max(buf.data.length, 32);
@@ -151,7 +151,7 @@ async function serveClient(socket) {
             }
             continue;
         }
-        if (msg.equals(Buffer.from("quit\n"))) {
+        if (msg.toString().trim() === "quit") {
             await soWrite(conn, Buffer.from("Bye.\n"));
             socket.destroy();
             return;
